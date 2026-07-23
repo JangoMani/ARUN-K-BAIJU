@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GroupCategory, StudentProgressRecord, TopicProgressState, UserProfile } from '../types';
 import { STUDENTS_LIST } from '../data/studentsAndTopics';
 import { downloadSyllabusCSV, downloadAllStudentsMasterCSV } from '../services/googleAuthAndSheets';
-import { Play, Pause, RotateCcw, Timer, UserCheck, Layers, AlertCircle, Sparkles, Save, Loader2, Check, FileSpreadsheet, Calendar, Clock, Mail, MessageSquare, FolderOpen, LogOut, ShieldCheck } from 'lucide-react';
+import { Play, Pause, RotateCcw, Timer, UserCheck, Layers, AlertCircle, Sparkles, Save, Loader2, Check, FileSpreadsheet, Calendar, Clock, Mail, MessageSquare, FolderOpen, LogOut, ShieldCheck, Crown } from 'lucide-react';
 
 interface HeaderProps {
   currentStudent: string;
@@ -23,6 +23,8 @@ interface HeaderProps {
   studentStoreCache?: Record<string, StudentProgressRecord>;
   currentUserProfile?: UserProfile | null;
   onSignOut?: () => void;
+  onOpenAdminConsole?: () => void;
+  registeredStudents?: string[];
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -44,8 +46,22 @@ export const Header: React.FC<HeaderProps> = ({
   studentStoreCache = {},
   currentUserProfile,
   onSignOut,
+  onOpenAdminConsole,
+  registeredStudents,
 }) => {
-  // Check if current selected student is Sumayya or Arun K Baiju
+  const studentOptions = Array.from(
+    new Set([
+      ...(registeredStudents || []),
+      ...Object.keys(studentStoreCache || {})
+    ].filter(Boolean))
+  );
+  // Check if current logged-in user profile is Admin (johnbosco9947@gmail.com)
+  const isAdminUser = (userProfile?: UserProfile | null) => {
+    if (!userProfile?.email) return false;
+    return userProfile.email.toLowerCase().trim() === 'johnbosco9947@gmail.com';
+  };
+
+  // Check if current selected student is Sumayya or Arun K Baiju for Excel Export
   const isAuthorizedExcelUser = (studentName: string) => {
     if (!studentName) return false;
     const upper = studentName.toUpperCase().trim();
@@ -197,10 +213,23 @@ export const Header: React.FC<HeaderProps> = ({
                   <Check className="w-3 h-3 text-emerald-600" /> Active
                 </span>
               </div>
+            ) : studentOptions.length > 0 ? (
+              <select
+                id="studentSearchInput"
+                value={currentStudent}
+                onChange={(e) => onStudentChange(e.target.value)}
+                className="bg-white text-slate-900 text-xs sm:text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-full font-extrabold shadow-sm border border-slate-200 cursor-pointer uppercase tracking-wide text-indigo-950"
+              >
+                {!currentStudent && <option value="">Select Registered Student</option>}
+                {studentOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
             ) : (
               <input
                 id="studentSearchInput"
-                list="studentDatalist"
                 value={currentStudent}
                 onChange={(e) => onStudentChange(e.target.value)}
                 onKeyDown={(e) => {
@@ -208,7 +237,7 @@ export const Header: React.FC<HeaderProps> = ({
                     onSaveToFirebase();
                   }
                 }}
-                placeholder="Select student name"
+                placeholder="Enter registered student name"
                 className={`bg-white text-slate-900 text-xs sm:text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-full font-medium shadow-sm transition ${
                   !currentStudent || !currentStudent.trim()
                     ? 'border-2 border-amber-400 ring-2 ring-amber-400/50 bg-amber-50 placeholder:text-amber-800 animate-pulse font-bold'
@@ -217,7 +246,7 @@ export const Header: React.FC<HeaderProps> = ({
               />
             )}
             <datalist id="studentDatalist">
-              {STUDENTS_LIST.map((name) => (
+              {studentOptions.map((name) => (
                 <option key={name} value={name} />
               ))}
             </datalist>
@@ -395,6 +424,18 @@ export const Header: React.FC<HeaderProps> = ({
             <Mail className="w-4 h-4 text-rose-100" />
             <span>Send Mail for Evaluation</span>
           </button>
+
+          {/* 8.5 ADMIN CONSOLE BUTTON (Only available when logged in with johnbosco9947@gmail.com) */}
+          {onOpenAdminConsole && isAdminUser(currentUserProfile) && (
+            <button
+              onClick={onOpenAdminConsole}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-500 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black border border-amber-300 px-3.5 py-2 rounded-lg text-xs transition shrink-0 cursor-pointer h-[38px] shadow-md hover:shadow-lg active:scale-95"
+              title="Open Admin User Management Console (Delete/Add Registered Students)"
+            >
+              <Crown className="w-4 h-4 text-slate-950 fill-amber-300" />
+              <span>Admin Console</span>
+            </button>
+          )}
 
           {/* 9. SIGN OUT / SWITCH PROFILE BUTTON */}
           {onSignOut && (

@@ -312,7 +312,9 @@ export function downloadAllStudentsMasterCSV(
 
   let totalRows = 0;
 
-  STUDENTS_LIST.forEach((name) => {
+  const allStudentNames = Object.keys(studentStoreCache);
+
+  allStudentNames.forEach((name) => {
     const record = studentStoreCache[name] || { groupFilter: 'Not Selected', topicsData: {} };
     const gFilter = record.groupFilter || 'Both';
 

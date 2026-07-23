@@ -15,6 +15,7 @@ import { RevisionReminderBox } from './components/RevisionReminderBox';
 import { NextTopicsBox } from './components/NextTopicsBox';
 import { StudyResourcesBox } from './components/StudyResourcesBox';
 import { RegisterModal } from './components/RegisterModal';
+import { AdminUserManagementModal } from './components/AdminUserManagementModal';
 
 const getInitialStudent = () => {
   try {
@@ -30,7 +31,7 @@ const getInitialStudent = () => {
   } catch (e) {
     // fallback
   }
-  return 'SINI EAPPEN';
+  return '';
 };
 
 export default function App() {
@@ -49,6 +50,8 @@ export default function App() {
     }
     return getInitialStudent();
   });
+
+  const [registeredStudents, setRegisteredStudents] = useState<string[]>([]);
 
   const [currentGroupFilter, setCurrentGroupFilter] = useState<GroupCategory>(() => {
     if (currentUserProfile && currentUserProfile.groupPreparingFor) {
@@ -69,10 +72,58 @@ export default function App() {
   });
 
   const [isStudyResourcesOpen, setIsStudyResourcesOpen] = useState<boolean>(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
   const [unseenResourceCount, setUnseenResourceCount] = useState<number>(0);
   const [lastSeenResourceTime, setLastSeenResourceTime] = useState<number>(() => {
     return Number(localStorage.getItem('ca_resources_last_seen_time')) || 0;
   });
+
+  const handleUserDeleted = (deletedFullName: string, deletedEmail: string) => {
+    setStudentStoreCache((prev) => {
+      const copy = { ...prev };
+      delete copy[deletedFullName];
+      return copy;
+    });
+
+    if (currentStudent.toUpperCase().trim() === deletedFullName.toUpperCase().trim()) {
+      setCurrentStudent(currentUserProfile?.fullName || '');
+    }
+  };
+
+  // Real-time listener for registered users collection
+  useEffect(() => {
+    if (!db) return;
+    try {
+      const colRef = collection(db, 'ca_registered_users');
+      const unsubUsers = onSnapshot(
+        colRef,
+        (snapshot) => {
+          const names: string[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (data && data.fullName) {
+              names.push(data.fullName.trim());
+            }
+          });
+          setRegisteredStudents(names);
+          if (names.length > 0) {
+            setCurrentStudent((prev) => {
+              if (!prev || !prev.trim() || !names.some(n => n.toUpperCase().trim() === prev.toUpperCase().trim())) {
+                return names[0];
+              }
+              return prev;
+            });
+          }
+        },
+        (err) => {
+          console.warn('Registered users listener error:', err);
+        }
+      );
+      return () => unsubUsers();
+    } catch (e) {
+      console.warn('Registered users setup error:', e);
+    }
+  }, []);
 
   // Listen for Firebase Auth user (e.g. Google Sign In) to auto-login if registered
   useEffect(() => {
@@ -239,20 +290,8 @@ export default function App() {
   // Load local storage cache on initial boot
   useEffect(() => {
     const initialCache: Record<string, StudentProgressRecord> = {};
-    STUDENTS_LIST.forEach((name) => {
-      const saved = localStorage.getItem(`ca_progress_${name}`);
-      if (saved) {
-        try {
-          initialCache[name] = JSON.parse(saved);
-        } catch (e) {
-          initialCache[name] = { studentName: name, groupFilter: 'Not Selected', topicsData: {} };
-        }
-      } else {
-        initialCache[name] = { studentName: name, groupFilter: 'Not Selected', topicsData: {} };
-      }
-    });
 
-    if (currentStudent && !initialCache[currentStudent]) {
+    if (currentStudent) {
       const savedCustom = localStorage.getItem(`ca_progress_${currentStudent}`);
       if (savedCustom) {
         try {
@@ -266,7 +305,7 @@ export default function App() {
     setStudentStoreCache(initialCache);
 
     // Initial group filter sync for initial student
-    if (initialCache[currentStudent]) {
+    if (currentStudent && initialCache[currentStudent]) {
       setCurrentGroupFilter(initialCache[currentStudent].groupFilter || 'Both');
     }
   }, []);
@@ -763,6 +802,8 @@ export default function App() {
         studentStoreCache={studentStoreCache}
         currentUserProfile={currentUserProfile}
         onSignOut={handleSignOut}
+        onOpenAdminConsole={() => setIsAdminModalOpen(true)}
+        registeredStudents={registeredStudents}
       />
 
       {/* Global Student Progress Bar */}
@@ -770,6 +811,7 @@ export default function App() {
         currentStudent={currentStudent}
         studentStoreCache={studentStoreCache}
         onSelectStudent={handleStudentChange}
+        registeredStudents={registeredStudents}
       />
 
       {/* Main Content Dashboard */}
@@ -863,6 +905,14 @@ export default function App() {
         isOpen={!currentUserProfile}
         onRegisterSuccess={handleRegisterSuccess}
         currentUserProfile={currentUserProfile}
+      />
+
+      {/* Admin User Management Modal */}
+      <AdminUserManagementModal
+        isOpen={isAdminModalOpen}
+        onClose={() => setIsAdminModalOpen(false)}
+        adminEmail="johnbosco9947@gmail.com"
+        onUserDeleted={handleUserDeleted}
       />
 
       {/* Footer */}

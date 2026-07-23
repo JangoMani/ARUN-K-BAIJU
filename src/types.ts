@@ -43,6 +43,17 @@ export interface UserProfile {
   groupPreparingFor: GroupCategory;
   registeredAt: string;
   photoURL?: string;
+  role?: 'student' | 'admin' | 'superadmin';
+}
+
+export interface AdminRequest {
+  id: string;
+  email: string;
+  fullName: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approvedBy?: string;
+  reason?: string;
 }
 
 export interface PaperStat {
