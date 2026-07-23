@@ -1,0 +1,6 @@
+{
+  "name": "CA Final Syllabus Tracker & Dashboard",
+  "description": "Real-time collaborative progress monitoring and syllabus tracking application for CA Final students with Firebase synchronization, analytics, and session timer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
