@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { GroupCategory, PaperName, TopicProgressState } from '../types';
+import { GroupCategory, PaperName, TopicProgressState, UserProfile } from '../types';
 import { TOPICS_DATA, getDateConstraints, sanitizeDocId } from '../data/studentsAndTopics';
-import { CheckSquare, Square, Search, Filter, CalendarX, Plus, Minus, Check, CheckCircle } from 'lucide-react';
+import { CheckSquare, Square, Search, Filter, CalendarX, Plus, Minus, Check, CheckCircle, ShieldAlert } from 'lucide-react';
 
 interface TopicsChecklistProps {
   currentStudent: string;
   currentGroupFilter: GroupCategory;
   currentTopicsData: Record<string, TopicProgressState>;
+  currentUserProfile?: UserProfile | null;
   onUpdateTopicField: (topicName: string, field: keyof TopicProgressState, value: any) => void;
   onUpdateRevision: (topicName: string, delta: number) => void;
   onClearTopicDates: (topicName: string) => void;
@@ -17,6 +18,7 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
   currentStudent,
   currentGroupFilter,
   currentTopicsData,
+  currentUserProfile,
   onUpdateTopicField,
   onUpdateRevision,
   onClearTopicDates,
@@ -26,6 +28,13 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
   const [topicSearchTerm, setTopicSearchTerm] = useState<string>('');
 
   const constraints = getDateConstraints();
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const isAdmin =
+    currentUserProfile?.email?.toLowerCase().trim() === 'johnbosco9947@gmail.com' ||
+    currentUserProfile?.role === 'admin' ||
+    currentUserProfile?.role === 'superadmin' ||
+    (currentStudent && (currentStudent.toLowerCase().includes('arun') || currentStudent.toLowerCase().includes('admin')));
 
   const isStudentSelected = !!currentStudent && currentStudent.trim().length > 0;
 
@@ -80,6 +89,16 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
         </div>
       )}
 
+      {/* Admin Mode Notice Banner */}
+      {isAdmin && isStudentSelected && (
+        <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-indigo-900 text-xs font-semibold flex items-center gap-2 shadow-2xs">
+          <span className="p-1 bg-indigo-200 text-indigo-900 rounded-lg text-sm shrink-0">🛡️</span>
+          <span>
+            <strong>Admin Mode ({currentStudent}):</strong> You can view all student data and <u>reschedule dates for overdue topics</u>. Student-filled fields (completion status, covered dates, revisions, difficulty) cannot be modified.
+          </span>
+        </div>
+      )}
+
       {/* Top Header & Search */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 border-b border-slate-100 pb-4">
         <div>
@@ -106,13 +125,17 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
 
           <button
             onClick={() => requireStudentSelection(() => onBatchMarkVisible(true, filteredTopics))}
-            className="text-xs bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 font-semibold px-3 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer"
+            disabled={isAdmin}
+            className="text-xs bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 font-semibold px-3 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            title={isAdmin ? 'Admins cannot batch mark student completion' : ''}
           >
             Select All
           </button>
           <button
             onClick={() => requireStudentSelection(() => onBatchMarkVisible(false, filteredTopics))}
-            className="text-xs bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 font-semibold px-3 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer"
+            disabled={isAdmin}
+            className="text-xs bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 font-semibold px-3 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            title={isAdmin ? 'Admins cannot batch mark student completion' : ''}
           >
             Clear All
           </button>
@@ -174,14 +197,16 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
                     type="checkbox"
                     id={`chk_${topicId}`}
                     checked={isChecked}
-                    disabled={!topicState.schDate && !isChecked}
+                    disabled={isAdmin || (!topicState.schDate && !isChecked)}
                     onChange={(e) => requireStudentSelection(() => onUpdateTopicField(topic.topicName, 'completed', e.target.checked))}
                     className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={!topicState.schDate && !isChecked ? 'Please fill Scheduled Date first' : ''}
+                    title={isAdmin ? 'Admins cannot edit student completion status' : (!topicState.schDate && !isChecked ? 'Please fill Scheduled Date first' : '')}
                   />
                   <label
                     htmlFor={`chk_${topicId}`}
-                    className={`text-sm font-bold cursor-pointer select-none ${
+                    className={`text-sm font-bold select-none ${
+                      isAdmin ? 'cursor-not-allowed' : 'cursor-pointer'
+                    } ${
                       isChecked ? 'text-emerald-900 line-through/40' : 'text-slate-800'
                     }`}
                     title={topic.topicName}
@@ -200,8 +225,9 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
                     </span>
                     <select
                       value={topicState.difficulty || ''}
+                      disabled={isAdmin}
                       onChange={(e) => requireStudentSelection(() => onUpdateTopicField(topic.topicName, 'difficulty', e.target.value))}
-                      className={`text-xs border rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 shadow-2xs font-semibold cursor-pointer ${
+                      className={`text-xs border rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400 shadow-2xs font-semibold cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                         topicState.difficulty === 'Easy'
                           ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
                           : topicState.difficulty === 'Average'
@@ -212,6 +238,7 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
                           ? 'bg-purple-50 border-purple-300 text-purple-800'
                           : 'bg-white border-slate-200 text-slate-700'
                       }`}
+                      title={isAdmin ? 'Admins cannot edit student difficulty rating' : ''}
                     >
                       <option value="">-- Optional --</option>
                       <option value="Easy">Easy</option>
@@ -229,8 +256,9 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
                     <div className="flex items-center border border-slate-200 rounded-lg bg-white overflow-hidden shadow-2xs">
                       <button
                         onClick={() => requireStudentSelection(() => onUpdateRevision(topic.topicName, -1))}
-                        className="px-2 py-0.5 text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold transition cursor-pointer"
-                        title="Decrease Revisions"
+                        disabled={isAdmin}
+                        className="px-2 py-0.5 text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={isAdmin ? 'Admins cannot edit student revision count' : 'Decrease Revisions'}
                       >
                         <Minus className="w-3 h-3" />
                       </button>
@@ -239,8 +267,9 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
                       </span>
                       <button
                         onClick={() => requireStudentSelection(() => onUpdateRevision(topic.topicName, 1))}
-                        className="px-2 py-0.5 text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold transition cursor-pointer"
-                        title="Increase Revisions"
+                        disabled={isAdmin}
+                        className="px-2 py-0.5 text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={isAdmin ? 'Admins cannot edit student revision count' : 'Increase Revisions'}
                       >
                         <Plus className="w-3 h-3" />
                       </button>
@@ -251,40 +280,60 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
                   <div className="flex flex-col justify-end">
                     <button
                       type="button"
+                      disabled={isAdmin}
                       onClick={() => requireStudentSelection(() => onClearTopicDates(topic.topicName))}
-                      className="text-[11px] font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer h-[28px] shrink-0"
-                      title="Clear saved dates for this topic"
+                      className="text-[11px] font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer h-[28px] shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={isAdmin ? 'Admins cannot clear student dates' : 'Clear saved dates for this topic'}
                     >
                       <CalendarX className="w-3 h-3" /> Clear
                     </button>
                   </div>
 
                   {/* Schedule Date */}
-                  <div className="flex flex-col">
-                    <div className="flex items-center justify-between gap-1 mb-1">
-                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
-                        Sch Date
-                      </span>
-                      {topicState.schDate && (
-                        <button
-                          type="button"
-                          onClick={() => requireStudentSelection(() => onUpdateTopicField(topic.topicName, 'schDate', ''))}
-                          className="text-[9px] text-rose-600 hover:text-rose-800 font-bold hover:underline cursor-pointer"
-                          title="Clear scheduled date"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    <input
-                      type="date"
-                      value={topicState.schDate || ''}
-                      min={constraints.minScheduleDate}
-                      max={constraints.maxScheduleDate}
-                      onChange={(e) => requireStudentSelection(() => onUpdateTopicField(topic.topicName, 'schDate', e.target.value))}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 shadow-2xs"
-                    />
-                  </div>
+                  {(() => {
+                    const isTopicOverdue = !isChecked && !!topicState.schDate && topicState.schDate < todayStr;
+                    const canEditSchDate = !isAdmin || isTopicOverdue;
+
+                    return (
+                      <div className="flex flex-col">
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
+                            Sch Date
+                          </span>
+                          {topicState.schDate && !isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => requireStudentSelection(() => onUpdateTopicField(topic.topicName, 'schDate', ''))}
+                              className="text-[9px] text-rose-600 hover:text-rose-800 font-bold hover:underline cursor-pointer"
+                              title="Clear scheduled date"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="date"
+                          value={topicState.schDate || ''}
+                          disabled={!canEditSchDate}
+                          min={constraints.minScheduleDate}
+                          max={constraints.maxScheduleDate}
+                          onChange={(e) => requireStudentSelection(() => onUpdateTopicField(topic.topicName, 'schDate', e.target.value))}
+                          className={`text-xs border rounded-lg px-2 py-1 shadow-2xs ${
+                            isTopicOverdue && isAdmin
+                              ? 'bg-rose-50 border-rose-400 font-bold text-rose-900 focus:bg-white focus:ring-rose-500'
+                              : 'bg-white border-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-400'
+                          } disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed`}
+                          title={
+                            isAdmin
+                              ? isTopicOverdue
+                                ? 'Admin: Reschedule overdue topic date'
+                                : 'Admin Restriction: Only overdue topic reschedule dates can be edited by Admin'
+                              : ''
+                          }
+                        />
+                      </div>
+                    );
+                  })()}
 
                   {/* Covered Date */}
                   <div className="flex flex-col">
@@ -292,7 +341,7 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
                       <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">
                         Covered Date
                       </span>
-                      {topicState.covDate && (
+                      {topicState.covDate && !isAdmin && (
                         <button
                           type="button"
                           onClick={() => requireStudentSelection(() => onUpdateTopicField(topic.topicName, 'covDate', ''))}
@@ -306,12 +355,12 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
                     <input
                       type="date"
                       value={topicState.covDate || ''}
-                      disabled={!topicState.schDate}
+                      disabled={isAdmin || !topicState.schDate}
                       min={topicState.schDate || undefined}
                       max={constraints.maxCoveredDate}
                       onChange={(e) => requireStudentSelection(() => onUpdateTopicField(topic.topicName, 'covDate', e.target.value))}
                       className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 shadow-2xs disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed"
-                      title={!topicState.schDate ? 'Please fill Scheduled Date first' : 'Select Covered Date'}
+                      title={isAdmin ? 'Admins cannot edit student covered dates' : (!topicState.schDate ? 'Please fill Scheduled Date first' : 'Select Covered Date')}
                     />
                   </div>
 
@@ -324,8 +373,10 @@ export const TopicsChecklist: React.FC<TopicsChecklistProps> = ({
                       <input
                         type="checkbox"
                         checked={!!topicState.evaluated}
+                        disabled={isAdmin}
                         onChange={(e) => requireStudentSelection(() => onUpdateTopicField(topic.topicName, 'evaluated', e.target.checked))}
-                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={isAdmin ? 'Admins cannot edit student evaluation status' : ''}
                       />
                     </div>
                   </div>

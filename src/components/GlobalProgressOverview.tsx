@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { StudentProgressRecord } from '../types';
-import { TOPICS_DATA } from '../data/studentsAndTopics';
-import { Search, Users, Sparkles, UserCheck } from 'lucide-react';
+import { TOPICS_DATA, sanitizeDocId } from '../data/studentsAndTopics';
+import { Search, Users, Sparkles, UserCheck, Trash2 } from 'lucide-react';
+import { db } from '../firebase';
+import { doc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 interface GlobalProgressOverviewProps {
   currentStudent: string;
   studentStoreCache: Record<string, StudentProgressRecord>;
   onSelectStudent?: (studentName: string) => void;
+  onDeleteStudent?: (studentName: string) => void;
   registeredStudents?: string[];
   isAdmin?: boolean;
 }
@@ -15,17 +18,28 @@ export const GlobalProgressOverview: React.FC<GlobalProgressOverviewProps> = ({
   currentStudent,
   studentStoreCache,
   onSelectStudent,
+  onDeleteStudent,
   registeredStudents = [],
   isAdmin = false,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Display ONLY registered students registered in database or active student
+  const isExcludedAdminName = (name: string) => {
+    if (!name) return false;
+    const upper = name.toUpperCase().trim();
+    return (
+      upper.includes('MANIKUTTAN') ||
+      upper.includes('ADMIN') ||
+      upper.includes('SUPERADMIN') ||
+      upper.includes('JOHNBOSCO')
+    );
+  };
+
+  // Display ONLY registered students registered in database
   const studentList = Array.from(
     new Set([
       ...(registeredStudents || []),
-      ...(currentStudent ? [currentStudent] : [])
-    ].filter((name) => name && name.trim().length > 0))
+    ].filter((name) => name && name.trim().length > 0 && !isExcludedAdminName(name)))
   );
 
   const filteredStudents = studentList.filter((name) =>
@@ -36,7 +50,73 @@ export const GlobalProgressOverview: React.FC<GlobalProgressOverviewProps> = ({
     if (isAdmin) {
       onSelectStudent?.(studentName);
     } else {
-      alert(`Student selection is restricted to Admin (ARUN K BAIJU). You are currently viewing your own student account (${currentStudent}).`);
+      alert(`Student selection is restricted to Admin. You are currently viewing your own student account (${currentStudent}).`);
+    }
+  };
+
+  const handleDeleteClick = async (e: React.MouseEvent, studentName: string) => {
+    e.stopPropagation();
+    if (!confirm(`Are you sure you want to permanently delete "${studentName}" and all associated progress data from Firestore Cloud?`)) {
+      return;
+    }
+
+    try {
+      if (db) {
+        const deletePromises: Promise<void>[] = [];
+        const docId = sanitizeDocId(studentName);
+        const upperDocId = sanitizeDocId(studentName.toUpperCase());
+
+        // Candidates for progress and ca_registered_users
+        deletePromises.push(deleteDoc(doc(db, 'progress', docId)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'progress', upperDocId)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'progress', studentName)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'progress', studentName.toUpperCase())).catch(() => {}));
+
+        deletePromises.push(deleteDoc(doc(db, 'ca_registered_users', docId)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'ca_registered_users', upperDocId)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'ca_registered_users', studentName)).catch(() => {}));
+        deletePromises.push(deleteDoc(doc(db, 'ca_registered_users', studentName.toUpperCase())).catch(() => {}));
+
+        // Query by fullName in ca_registered_users
+        try {
+          const q1 = query(collection(db, 'ca_registered_users'), where('fullName', '==', studentName));
+          const snap1 = await getDocs(q1);
+          snap1.forEach((d) => deletePromises.push(deleteDoc(d.ref).catch(() => {})));
+        } catch (e) {}
+
+        try {
+          const q2 = query(collection(db, 'ca_registered_users'), where('fullName', '==', studentName.toUpperCase()));
+          const snap2 = await getDocs(q2);
+          snap2.forEach((d) => deletePromises.push(deleteDoc(d.ref).catch(() => {})));
+        } catch (e) {}
+
+        // Query by studentName in progress
+        try {
+          const q3 = query(collection(db, 'progress'), where('studentName', '==', studentName));
+          const snap3 = await getDocs(q3);
+          snap3.forEach((d) => deletePromises.push(deleteDoc(d.ref).catch(() => {})));
+        } catch (e) {}
+
+        try {
+          const q4 = query(collection(db, 'progress'), where('studentName', '==', studentName.toUpperCase()));
+          const snap4 = await getDocs(q4);
+          snap4.forEach((d) => deletePromises.push(deleteDoc(d.ref).catch(() => {})));
+        } catch (e) {}
+
+        await Promise.all(deletePromises);
+      }
+
+      localStorage.removeItem(`ca_progress_${studentName}`);
+      localStorage.removeItem(`ca_progress_${studentName.toUpperCase()}`);
+      localStorage.removeItem(`ca_user_profile_${sanitizeDocId(studentName)}`);
+
+      if (onDeleteStudent) {
+        onDeleteStudent(studentName);
+      }
+
+      alert(`Successfully deleted all student records and progress data for "${studentName}".`);
+    } catch (err: any) {
+      alert(`Failed to delete student: ${err.message || 'Unknown error'}`);
     }
   };
 
@@ -61,6 +141,7 @@ export const GlobalProgressOverview: React.FC<GlobalProgressOverviewProps> = ({
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
+                autoComplete="off"
                 placeholder="Search registered student..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -124,7 +205,19 @@ export const GlobalProgressOverview: React.FC<GlobalProgressOverviewProps> = ({
                     >
                       {name}
                     </div>
-                    {isCurrent && <Sparkles className="w-3 h-3 text-indigo-600 shrink-0" />}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {isCurrent && <Sparkles className="w-3 h-3 text-indigo-600" />}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteClick(e, name)}
+                          className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50 transition"
+                          title={`Delete ${name}'s progress data`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex justify-between items-center text-[10px] text-slate-500 mb-1">

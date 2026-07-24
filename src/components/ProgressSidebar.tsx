@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GroupCategory, StudentProgressRecord, TopicProgressState } from '../types';
+import { GroupCategory, StudentProgressRecord, TopicProgressState, UserProfile } from '../types';
 import { TOPICS_DATA } from '../data/studentsAndTopics';
 import { CheckCircle2, Clock, BookOpen, AlertTriangle } from 'lucide-react';
 import { TopicStatusModal, StatusTabType } from './TopicStatusModal';
@@ -9,6 +9,7 @@ interface ProgressSidebarProps {
   currentGroupFilter: GroupCategory;
   studentStoreCache: Record<string, StudentProgressRecord>;
   cloudConnected: boolean;
+  currentUserProfile?: UserProfile | null;
   onUpdateTopicField?: (
     topicName: string,
     field: keyof TopicProgressState,
@@ -21,6 +22,7 @@ export const ProgressSidebar: React.FC<ProgressSidebarProps> = ({
   currentGroupFilter,
   studentStoreCache,
   cloudConnected,
+  currentUserProfile,
   onUpdateTopicField,
 }) => {
   const currentRecord = studentStoreCache[currentStudent] || {
@@ -210,6 +212,7 @@ export const ProgressSidebar: React.FC<ProgressSidebarProps> = ({
         currentStudent={currentStudent}
         currentGroupFilter={currentGroupFilter}
         studentStoreCache={studentStoreCache}
+        currentUserProfile={currentUserProfile}
         onUpdateTopicField={onUpdateTopicField}
       />
     </aside>

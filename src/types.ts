@@ -44,6 +44,10 @@ export interface UserProfile {
   registeredAt: string;
   photoURL?: string;
   role?: 'student' | 'admin' | 'superadmin';
+  isRegisteredAsStudent?: boolean;
+  examMonthYear?: string;
+  userDocIds?: string[];
+  progressDocIds?: string[];
 }
 
 export interface AdminRequest {

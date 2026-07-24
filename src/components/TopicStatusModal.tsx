@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GroupCategory, StudentProgressRecord, TopicProgressState } from '../types';
+import { GroupCategory, StudentProgressRecord, TopicProgressState, UserProfile } from '../types';
 import { TOPICS_DATA, getLocalTodayString } from '../data/studentsAndTopics';
 import {
   X,
@@ -22,6 +22,7 @@ interface TopicStatusModalProps {
   currentStudent: string;
   currentGroupFilter: GroupCategory;
   studentStoreCache: Record<string, StudentProgressRecord>;
+  currentUserProfile?: UserProfile | null;
   onUpdateTopicField?: (
     topicName: string,
     field: keyof TopicProgressState,
@@ -36,11 +37,18 @@ export const TopicStatusModal: React.FC<TopicStatusModalProps> = ({
   currentStudent,
   currentGroupFilter,
   studentStoreCache,
+  currentUserProfile,
   onUpdateTopicField,
 }) => {
   const [activeTab, setActiveTab] = useState<StatusTabType>(initialTab);
   const [selectedPaper, setSelectedPaper] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const isAdmin =
+    currentUserProfile?.email?.toLowerCase().trim() === 'johnbosco9947@gmail.com' ||
+    currentUserProfile?.role === 'admin' ||
+    currentUserProfile?.role === 'superadmin' ||
+    (currentStudent && (currentStudent.toLowerCase().includes('arun') || currentStudent.toLowerCase().includes('admin')));
 
   // Sync initialTab when modal opens
   React.useEffect(() => {
@@ -438,16 +446,22 @@ export const TopicStatusModal: React.FC<TopicStatusModalProps> = ({
                           <input
                             type="date"
                             value={schDateStr}
+                            disabled={isAdmin && !isOverdue}
                             onChange={(e) => {
                               if (onUpdateTopicField) {
                                 onUpdateTopicField(t.topicName, 'schDate', e.target.value);
                               }
                             }}
-                            className={`text-xs font-bold border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer ${
+                            className={`text-xs font-bold border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed ${
                               isOverdue
                                 ? 'border-rose-400 bg-rose-50 text-rose-900 focus:bg-white'
                                 : 'border-slate-300 bg-white text-slate-800'
                             }`}
+                            title={
+                              isAdmin && !isOverdue
+                                ? 'Admin restriction: Only overdue topic reschedule dates can be edited'
+                                : 'Reschedule date'
+                            }
                           />
                         </div>
 
@@ -455,46 +469,50 @@ export const TopicStatusModal: React.FC<TopicStatusModalProps> = ({
                         <div className="flex items-center gap-1 flex-wrap">
                           <span className="text-[10px] font-semibold text-slate-400 mr-1">Push To:</span>
                           <button
+                            disabled={isAdmin && !isOverdue}
                             onClick={() => {
                               if (onUpdateTopicField) {
                                 onUpdateTopicField(t.topicName, 'schDate', getOffsetLocalDateString(0));
                               }
                             }}
-                            className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition cursor-pointer"
-                            title="Reschedule to Today"
+                            className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={isAdmin && !isOverdue ? 'Admin restriction: Only overdue topic reschedule dates can be edited' : 'Reschedule to Today'}
                           >
                             Today
                           </button>
                           <button
+                            disabled={isAdmin && !isOverdue}
                             onClick={() => {
                               if (onUpdateTopicField) {
                                 onUpdateTopicField(t.topicName, 'schDate', getOffsetLocalDateString(1));
                               }
                             }}
-                            className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition cursor-pointer"
-                            title="Reschedule to Tomorrow"
+                            className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={isAdmin && !isOverdue ? 'Admin restriction: Only overdue topic reschedule dates can be edited' : 'Reschedule to Tomorrow'}
                           >
                             +1 Day
                           </button>
                           <button
+                            disabled={isAdmin && !isOverdue}
                             onClick={() => {
                               if (onUpdateTopicField) {
                                 onUpdateTopicField(t.topicName, 'schDate', getOffsetLocalDateString(3));
                               }
                             }}
-                            className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition cursor-pointer"
-                            title="Reschedule to +3 Days"
+                            className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={isAdmin && !isOverdue ? 'Admin restriction: Only overdue topic reschedule dates can be edited' : 'Reschedule to +3 Days'}
                           >
                             +3 Days
                           </button>
                           <button
+                            disabled={isAdmin && !isOverdue}
                             onClick={() => {
                               if (onUpdateTopicField) {
                                 onUpdateTopicField(t.topicName, 'schDate', getOffsetLocalDateString(7));
                               }
                             }}
-                            className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition cursor-pointer"
-                            title="Reschedule to +1 Week"
+                            className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={isAdmin && !isOverdue ? 'Admin restriction: Only overdue topic reschedule dates can be edited' : 'Reschedule to +1 Week'}
                           >
                             +1 Wk
                           </button>
@@ -502,16 +520,18 @@ export const TopicStatusModal: React.FC<TopicStatusModalProps> = ({
 
                         {/* Toggle Covered Checkbox */}
                         <div className="pt-1 flex items-center justify-end w-full">
-                          <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
+                          <label className={`inline-flex items-center gap-1.5 text-xs font-semibold ${isAdmin ? 'text-slate-400 cursor-not-allowed' : 'text-slate-700 cursor-pointer'}`}>
                             <input
                               type="checkbox"
                               checked={isCompleted}
+                              disabled={isAdmin}
                               onChange={(e) => {
                                 if (onUpdateTopicField) {
                                   onUpdateTopicField(t.topicName, 'completed', e.target.checked);
                                 }
                               }}
-                              className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                              className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                              title={isAdmin ? 'Admins cannot edit student completion status' : ''}
                             />
                             <span>Mark as Covered</span>
                           </label>
@@ -521,13 +541,14 @@ export const TopicStatusModal: React.FC<TopicStatusModalProps> = ({
                       /* For Covered topics: Option to unmark if needed */
                       <div className="shrink-0 flex sm:flex-col items-end justify-center">
                         <button
+                          disabled={isAdmin}
                           onClick={() => {
                             if (onUpdateTopicField) {
                               onUpdateTopicField(t.topicName, 'completed', false);
                             }
                           }}
-                          className="px-3 py-1.5 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-lg transition cursor-pointer"
-                          title="Mark topic as pending again"
+                          className="px-3 py-1.5 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-lg transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          title={isAdmin ? 'Admins cannot edit student completion status' : 'Mark topic as pending again'}
                         >
                           Unmark Covered
                         </button>

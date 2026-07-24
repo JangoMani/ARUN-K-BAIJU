@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GroupCategory, StudentProgressRecord, TopicProgressState, UserProfile } from './types';
 import { STUDENTS_LIST, TOPICS_DATA, sanitizeDocId, getDateConstraints } from './data/studentsAndTopics';
 import { db, auth } from './firebase';
@@ -34,6 +34,20 @@ const getInitialStudent = () => {
   return '';
 };
 
+const isUserAdminProfile = (fullName?: string, email?: string, role?: string) => {
+  const roleLower = (role || '').toLowerCase().trim();
+  const nameLower = (fullName || '').toLowerCase().trim();
+  const emailLower = (email || '').toLowerCase().trim();
+
+  return (
+    roleLower === 'admin' ||
+    roleLower === 'superadmin' ||
+    nameLower.includes('manikuttan') ||
+    nameLower.includes('admin') ||
+    emailLower === 'johnbosco9947@gmail.com'
+  );
+};
+
 export default function App() {
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(() => {
     try {
@@ -46,7 +60,11 @@ export default function App() {
 
   const [currentStudent, setCurrentStudent] = useState<string>(() => {
     if (currentUserProfile && currentUserProfile.fullName) {
-      return currentUserProfile.fullName;
+      const isAdmin = isUserAdminProfile(currentUserProfile.fullName, currentUserProfile.email, currentUserProfile.role);
+      const isStudent = currentUserProfile.role === 'student';
+      if (!isAdmin || isStudent) {
+        return currentUserProfile.fullName;
+      }
     }
     return getInitialStudent();
   });
@@ -78,14 +96,79 @@ export default function App() {
     return Number(localStorage.getItem('ca_resources_last_seen_time')) || 0;
   });
 
-  const handleUserDeleted = (deletedFullName: string, deletedEmail: string) => {
-    setStudentStoreCache((prev) => {
-      const copy = { ...prev };
-      delete copy[deletedFullName];
-      return copy;
+  const caUsersNamesRef = useRef<string[]>([]);
+  const progressRecordsRef = useRef<Record<string, StudentProgressRecord>>({});
+
+  const syncStudentsAndCache = useCallback(() => {
+    const nameMap = new Map<string, string>();
+
+    // 1. Collect from ca_registered_users
+    caUsersNamesRef.current.forEach((name) => {
+      if (name && name.trim()) {
+        nameMap.set(name.trim().toUpperCase(), name.trim());
+      }
     });
 
-    if (currentStudent.toUpperCase().trim() === deletedFullName.toUpperCase().trim()) {
+    // 2. Collect from progress collection
+    Object.keys(progressRecordsRef.current).forEach((pName) => {
+      if (pName && pName.trim()) {
+        const upper = pName.trim().toUpperCase();
+        if (!isUserAdminProfile(pName)) {
+          if (!nameMap.has(upper)) {
+            nameMap.set(upper, pName.trim());
+          }
+        }
+      }
+    });
+
+    const unifiedNames = Array.from(nameMap.values());
+    setRegisteredStudents(unifiedNames);
+
+    // Prune progress cache so deleted students are purged, while all active students remain
+    const upperUnified = unifiedNames.map((n) => n.toUpperCase().trim());
+    const filteredCache: Record<string, StudentProgressRecord> = {};
+
+    Object.entries(progressRecordsRef.current).forEach(([k, recVal]) => {
+      const rec = recVal as StudentProgressRecord;
+      if (rec && rec.studentName && upperUnified.includes(k.toUpperCase().trim())) {
+        filteredCache[rec.studentName || k] = rec;
+      }
+    });
+
+    setStudentStoreCache(filteredCache);
+
+    if (unifiedNames.length > 0) {
+      setCurrentStudent((prev) => {
+        const isPrevAdmin = isUserAdminProfile(prev);
+        const isPrevInNames = unifiedNames.some(
+          (n) => n.toUpperCase().trim() === (prev || '').toUpperCase().trim()
+        );
+        if (!prev || !prev.trim() || isPrevAdmin || !isPrevInNames) {
+          return unifiedNames[0];
+        }
+        return prev;
+      });
+    }
+  }, []);
+
+  const handleUserDeleted = (deletedFullName: string, deletedEmail: string) => {
+    const deletedUpper = deletedFullName.toUpperCase().trim();
+    caUsersNamesRef.current = caUsersNamesRef.current.filter(
+      (n) => n.toUpperCase().trim() !== deletedUpper
+    );
+
+    Object.keys(progressRecordsRef.current).forEach((key) => {
+      if (key.toUpperCase().trim() === deletedUpper) {
+        delete progressRecordsRef.current[key];
+      }
+    });
+
+    localStorage.removeItem(`ca_progress_${deletedFullName}`);
+    localStorage.removeItem(`ca_progress_${deletedUpper}`);
+
+    syncStudentsAndCache();
+
+    if (currentStudent.toUpperCase().trim() === deletedUpper) {
       setCurrentStudent(currentUserProfile?.fullName || '');
     }
   };
@@ -102,18 +185,17 @@ export default function App() {
           snapshot.forEach((docSnap) => {
             const data = docSnap.data();
             if (data && data.fullName) {
-              names.push(data.fullName.trim());
+              const isAdmin = isUserAdminProfile(data.fullName, data.email, data.role);
+              const isStudentRole = data.role === 'student' || data.isRegisteredAsStudent === true;
+
+              // Only include if NOT admin or explicitly registered as a student
+              if (!isAdmin || isStudentRole) {
+                names.push(data.fullName.trim());
+              }
             }
           });
-          setRegisteredStudents(names);
-          if (names.length > 0) {
-            setCurrentStudent((prev) => {
-              if (!prev || !prev.trim() || !names.some(n => n.toUpperCase().trim() === prev.toUpperCase().trim())) {
-                return names[0];
-              }
-              return prev;
-            });
-          }
+          caUsersNamesRef.current = names;
+          syncStudentsAndCache();
         },
         (err) => {
           console.warn('Registered users listener error:', err);
@@ -123,7 +205,7 @@ export default function App() {
     } catch (e) {
       console.warn('Registered users setup error:', e);
     }
-  }, []);
+  }, [syncStudentsAndCache]);
 
   // Listen for Firebase Auth user (e.g. Google Sign In) to auto-login if registered
   useEffect(() => {
@@ -139,7 +221,11 @@ export default function App() {
               const profile = docSnap.data() as UserProfile;
               setCurrentUserProfile(profile);
               localStorage.setItem('ca_current_user_profile', JSON.stringify(profile));
-              if (profile.fullName) {
+
+              const isAdmin = isUserAdminProfile(profile.fullName, profile.email, profile.role);
+              const isStudentRole = profile.role === 'student';
+
+              if (profile.fullName && (!isAdmin || isStudentRole)) {
                 setCurrentStudent(profile.fullName);
               }
               if (profile.groupPreparingFor) {
@@ -163,7 +249,11 @@ export default function App() {
       const userDocId = sanitizeDocId(profile.email);
       localStorage.setItem(`ca_user_profile_${userDocId}`, JSON.stringify(profile));
     }
-    if (profile.fullName) {
+
+    const isAdmin = isUserAdminProfile(profile.fullName, profile.email, profile.role);
+    const isStudentRole = profile.role === 'student';
+
+    if (profile.fullName && (!isAdmin || isStudentRole)) {
       setCurrentStudent(profile.fullName);
       localStorage.setItem('ca_last_active_student', profile.fullName);
     }
@@ -173,13 +263,24 @@ export default function App() {
   };
 
   // Handle sign out
-  const handleSignOut = () => {
-    if (window.confirm('Are you sure you want to sign out from your student account?')) {
+  const handleSignOut = async () => {
+    try {
       localStorage.removeItem('ca_current_user_profile');
+      localStorage.removeItem('ca_last_active_student');
       if (auth) {
-        auth.signOut().catch(() => {});
+        await auth.signOut();
       }
+    } catch (err) {
+      console.warn('Firebase auth sign out error:', err);
+    } finally {
       setCurrentUserProfile(null);
+      setCurrentStudent('');
+      setIsAdminModalOpen(false);
+      setIsDoubtChatOpen(false);
+      setIsStudyResourcesOpen(false);
+      setIsGoogleSheetsOpen(false);
+      setIsGmailOpen(false);
+      setIsCodeReviewOpen(false);
     }
   };
 
@@ -337,10 +438,8 @@ export default function App() {
             }
           });
 
-          setStudentStoreCache((prev) => ({
-            ...prev,
-            ...updated,
-          }));
+          progressRecordsRef.current = updated;
+          syncStudentsAndCache();
         },
         (error) => {
           console.warn('Firestore global listener offline/fallback:', error);
@@ -352,7 +451,7 @@ export default function App() {
     } catch (e) {
       setCloudConnected(false);
     }
-  }, []);
+  }, [syncStudentsAndCache]);
 
   // Listen to active student doc
   useEffect(() => {
@@ -511,6 +610,20 @@ export default function App() {
       revisions: 0,
     };
 
+    const isUserAdmin =
+      currentUserProfile?.email?.toLowerCase().trim() === 'johnbosco9947@gmail.com' ||
+      currentUserProfile?.role === 'admin' ||
+      currentUserProfile?.role === 'superadmin' ||
+      (currentStudent && (currentStudent.toLowerCase().includes('arun') || currentStudent.toLowerCase().includes('admin')));
+
+    if (isUserAdmin) {
+      const isTopicOverdue = !existingTopicState.completed && !!existingTopicState.schDate && existingTopicState.schDate < todayStr;
+      if (field !== 'schDate' || !isTopicOverdue) {
+        alert('⚠️ Admin Restriction: Admins can travel to any student data but cannot edit data filled by students, except topic reschedule date for overdue topics.');
+        return;
+      }
+    }
+
     // Validation for Covered Date
     if (field === 'covDate' && value) {
       if (!existingTopicState.schDate) {
@@ -662,6 +775,17 @@ export default function App() {
       return;
     }
 
+    const isUserAdmin =
+      currentUserProfile?.email?.toLowerCase().trim() === 'johnbosco9947@gmail.com' ||
+      currentUserProfile?.role === 'admin' ||
+      currentUserProfile?.role === 'superadmin' ||
+      (currentStudent && (currentStudent.toLowerCase().includes('arun') || currentStudent.toLowerCase().includes('admin')));
+
+    if (isUserAdmin) {
+      alert('⚠️ Admin Restriction: Admins can travel to any student data but cannot edit data filled by students, except topic reschedule date for overdue topics.');
+      return;
+    }
+
     setStudentStoreCache((prev) => {
       const currentRecord = prev[currentStudent] || {
         studentName: currentStudent,
@@ -705,6 +829,17 @@ export default function App() {
       return;
     }
 
+    const isUserAdmin =
+      currentUserProfile?.email?.toLowerCase().trim() === 'johnbosco9947@gmail.com' ||
+      currentUserProfile?.role === 'admin' ||
+      currentUserProfile?.role === 'superadmin' ||
+      (currentStudent && (currentStudent.toLowerCase().includes('arun') || currentStudent.toLowerCase().includes('admin')));
+
+    if (isUserAdmin) {
+      alert('⚠️ Admin Restriction: Admins can travel to any student data but cannot edit data filled by students, except topic reschedule date for overdue topics.');
+      return;
+    }
+
     setStudentStoreCache((prev) => {
       const currentRecord = prev[currentStudent] || {
         studentName: currentStudent,
@@ -741,6 +876,17 @@ export default function App() {
   const handleBatchMarkVisible = (completed: boolean, visibleTopics: typeof TOPICS_DATA) => {
     if (!currentStudent) {
       alert('Please select or enter a student name first.');
+      return;
+    }
+
+    const isUserAdmin =
+      currentUserProfile?.email?.toLowerCase().trim() === 'johnbosco9947@gmail.com' ||
+      currentUserProfile?.role === 'admin' ||
+      currentUserProfile?.role === 'superadmin' ||
+      (currentStudent && (currentStudent.toLowerCase().includes('arun') || currentStudent.toLowerCase().includes('admin')));
+
+    if (isUserAdmin) {
+      alert('⚠️ Admin Restriction: Admins can travel to any student data but cannot edit data filled by students, except topic reschedule date for overdue topics.');
       return;
     }
 
@@ -811,7 +957,13 @@ export default function App() {
         currentStudent={currentStudent}
         studentStoreCache={studentStoreCache}
         onSelectStudent={handleStudentChange}
+        onDeleteStudent={(deletedName) => handleUserDeleted(deletedName, '')}
         registeredStudents={registeredStudents}
+        isAdmin={
+          currentUserProfile?.role === 'admin' ||
+          currentUserProfile?.role === 'superadmin' ||
+          currentUserProfile?.email?.toLowerCase().trim() === 'johnbosco9947@gmail.com'
+        }
       />
 
       {/* Main Content Dashboard */}
@@ -834,6 +986,7 @@ export default function App() {
             currentGroupFilter={currentGroupFilter}
             studentStoreCache={studentStoreCache}
             cloudConnected={cloudConnected}
+            currentUserProfile={currentUserProfile}
             onUpdateTopicField={handleUpdateTopicField}
           />
 
@@ -852,6 +1005,7 @@ export default function App() {
               currentStudent={currentStudent}
               currentGroupFilter={currentGroupFilter}
               currentTopicsData={currentTopicsMap}
+              currentUserProfile={currentUserProfile}
               onUpdateTopicField={handleUpdateTopicField}
               onUpdateRevision={handleUpdateRevision}
               onClearTopicDates={handleClearTopicDates}

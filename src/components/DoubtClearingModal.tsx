@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
+import { UserProfile } from '../types';
 import {
   collection,
   addDoc,
@@ -42,6 +43,7 @@ interface DoubtClearingModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentStudent: string;
+  currentUserProfile?: UserProfile | null;
 }
 
 const LOCAL_STORAGE_KEY = 'ca_doubts_chat_backup_v1';
@@ -50,10 +52,17 @@ const TEN_DAYS_MS = 10 * 24 * 60 * 60 * 1000;
 export const DoubtClearingModal: React.FC<DoubtClearingModalProps> = ({
   isOpen,
   onClose,
-  currentStudent
+  currentStudent,
+  currentUserProfile,
 }) => {
   const [messages, setMessages] = useState<DoubtMessage[]>([]);
   const [inputText, setInputText] = useState<string>('');
+
+  const isAdmin =
+    currentUserProfile?.email?.toLowerCase().trim() === 'johnbosco9947@gmail.com' ||
+    currentUserProfile?.role === 'admin' ||
+    currentUserProfile?.role === 'superadmin' ||
+    (currentStudent && (currentStudent.toLowerCase().includes('arun') || currentStudent.toLowerCase().includes('admin')));
   
   // File upload preview
   const [selectedFile, setSelectedFile] = useState<{
@@ -350,15 +359,19 @@ export const DoubtClearingModal: React.FC<DoubtClearingModalProps> = ({
                     <span>&bull;</span>
                     <span className="font-mono">{msg.dateStr}</span>
                     <span>&bull;</span>
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteMessage(msg.id, e)}
-                      className="p-1 px-1.5 text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs font-bold"
-                      title="Delete message for everyone"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                      <span className="text-[10px] font-bold">Delete</span>
-                    </button>
+                    {(isMe || isAdmin) && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteMessage(msg.id, e)}
+                        className="p-1 px-1.5 text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 rounded-md transition cursor-pointer flex items-center gap-1 shadow-2xs font-bold"
+                        title="Delete message and files permanently for everyone"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                        <span className="text-[10px] font-bold">
+                          {isAdmin && !isMe ? 'Delete (Admin)' : 'Delete'}
+                        </span>
+                      </button>
+                    )}
                   </div>
 
                   {/* Bubble */}

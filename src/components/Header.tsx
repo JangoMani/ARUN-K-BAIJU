@@ -49,17 +49,51 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAdminConsole,
   registeredStudents,
 }) => {
+  const isExcludedAdminStudentName = (name: string) => {
+    if (!name) return false;
+    const upper = name.toUpperCase().trim();
+    return (
+      upper.includes('MANIKUTTAN') ||
+      upper.includes('ADMIN') ||
+      upper.includes('SUPERADMIN') ||
+      upper.includes('JOHNBOSCO')
+    );
+  };
+
   const studentOptions = Array.from(
     new Set([
       ...(registeredStudents || []),
-      ...Object.keys(studentStoreCache || {})
     ].filter(Boolean))
-  );
-  // Check if current logged-in user profile is Admin (johnbosco9947@gmail.com)
+  ).filter((name) => {
+    if (isExcludedAdminStudentName(name)) {
+      if (
+        currentUserProfile?.fullName?.toUpperCase().trim() === name.toUpperCase().trim() &&
+        currentUserProfile.role === 'student'
+      ) {
+        return true;
+      }
+      return false;
+    }
+    return true;
+  });
+
+  // Check if current logged-in user profile is Admin (johnbosco9947@gmail.com, Manikuttan, or role === 'admin' / 'superadmin')
   const isAdminUser = (userProfile?: UserProfile | null) => {
-    if (!userProfile?.email) return false;
-    return userProfile.email.toLowerCase().trim() === 'johnbosco9947@gmail.com';
+    if (!userProfile) return false;
+    const email = (userProfile.email || '').toLowerCase().trim();
+    const role = (userProfile.role || '').toLowerCase().trim();
+    const name = (userProfile.fullName || '').toLowerCase().trim();
+
+    return (
+      email === 'johnbosco9947@gmail.com' ||
+      role === 'admin' ||
+      role === 'superadmin' ||
+      name.includes('manikuttan') ||
+      name.includes('admin')
+    );
   };
+
+  const isStudentGroupLocked = !!currentUserProfile && !isAdminUser(currentUserProfile);
 
   // Check if current selected student is Sumayya or Arun K Baiju for Excel Export
   const isAuthorizedExcelUser = (studentName: string) => {
@@ -204,46 +238,56 @@ export const Header: React.FC<HeaderProps> = ({
               ) : null}
             </div>
 
-            {currentUserProfile ? (
+            {currentUserProfile && !isAdminUser(currentUserProfile) ? (
               <div className="bg-white/95 text-slate-900 text-xs sm:text-sm rounded-lg px-3 py-1.5 font-bold shadow-sm border border-emerald-300 flex items-center justify-between gap-2">
                 <span className="truncate uppercase text-indigo-950 tracking-wide font-black">
                   {currentUserProfile.fullName || currentStudent}
                 </span>
                 <span className="px-1.5 py-0.2 text-[10px] font-extrabold bg-emerald-100 text-emerald-800 rounded flex items-center gap-0.5 shrink-0">
-                  <Check className="w-3 h-3 text-emerald-600" /> Active
+                  <Check className="w-3 h-3 text-emerald-600" /> Active Student
                 </span>
               </div>
-            ) : studentOptions.length > 0 ? (
-              <select
-                id="studentSearchInput"
-                value={currentStudent}
-                onChange={(e) => onStudentChange(e.target.value)}
-                className="bg-white text-slate-900 text-xs sm:text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-full font-extrabold shadow-sm border border-slate-200 cursor-pointer uppercase tracking-wide text-indigo-950"
-              >
-                {!currentStudent && <option value="">Select Registered Student</option>}
-                {studentOptions.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
             ) : (
-              <input
-                id="studentSearchInput"
-                value={currentStudent}
-                onChange={(e) => onStudentChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    onSaveToFirebase();
-                  }
-                }}
-                placeholder="Enter registered student name"
-                className={`bg-white text-slate-900 text-xs sm:text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-full font-medium shadow-sm transition ${
-                  !currentStudent || !currentStudent.trim()
-                    ? 'border-2 border-amber-400 ring-2 ring-amber-400/50 bg-amber-50 placeholder:text-amber-800 animate-pulse font-bold'
-                    : 'border border-slate-200 placeholder:text-slate-400'
-                }`}
-              />
+              <div className="flex flex-col w-full">
+                {isAdminUser(currentUserProfile) && (
+                  <span className="text-[10px] font-extrabold text-amber-300 flex items-center gap-1 mb-0.5">
+                    🛡️ Admin Mode &bull; Viewing Student:
+                  </span>
+                )}
+                {studentOptions.length > 0 ? (
+                  <select
+                    id="studentSearchInput"
+                    value={currentStudent}
+                    onChange={(e) => onStudentChange(e.target.value)}
+                    className="bg-white text-slate-900 text-xs sm:text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-full font-extrabold shadow-sm border border-slate-200 cursor-pointer uppercase tracking-wide text-indigo-950"
+                  >
+                    {!currentStudent && <option value="">Select Registered Student</option>}
+                    {studentOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="studentSearchInput"
+                    autoComplete="off"
+                    value={currentStudent}
+                    onChange={(e) => onStudentChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        onSaveToFirebase();
+                      }
+                    }}
+                    placeholder="Enter registered student name"
+                    className={`bg-white text-slate-900 text-xs sm:text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-full font-medium shadow-sm transition ${
+                      !currentStudent || !currentStudent.trim()
+                        ? 'border-2 border-amber-400 ring-2 ring-amber-400/50 bg-amber-50 placeholder:text-amber-800 animate-pulse font-bold'
+                        : 'border border-slate-200 placeholder:text-slate-400'
+                    }`}
+                  />
+                )}
+              </div>
             )}
             <datalist id="studentDatalist">
               {studentOptions.map((name) => (
@@ -253,15 +297,28 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* 2. Group Category (At the beginning) */}
-          <div className="flex flex-col min-w-[130px]">
-            <label htmlFor="groupCategorySelect" className="text-[11px] text-indigo-200 font-semibold mb-1 flex items-center gap-1">
-              <Layers className="w-3 h-3" /> Group:
-            </label>
+          <div className="flex flex-col min-w-[140px]">
+            <div className="flex items-center justify-between mb-1">
+              <label htmlFor="groupCategorySelect" className="text-[11px] text-indigo-200 font-semibold flex items-center gap-1">
+                <Layers className="w-3 h-3" /> Group:
+              </label>
+              {isStudentGroupLocked && (
+                <span className="text-[9px] font-bold text-amber-300 bg-amber-950/80 px-1 py-0.2 rounded border border-amber-500/40" title="Selected during registration. Editable only by Admin.">
+                  🔒 Locked
+                </span>
+              )}
+            </div>
             <select
               id="groupCategorySelect"
               value={currentGroupFilter}
               onChange={(e) => onGroupFilterChange(e.target.value as GroupCategory)}
-              className="bg-white text-slate-900 text-xs sm:text-sm rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 font-medium shadow-sm cursor-pointer"
+              disabled={isStudentGroupLocked}
+              title={isStudentGroupLocked ? "Group was chosen during registration. Only Admin can modify it in the Admin Console." : "Select Group Category"}
+              className={`text-xs sm:text-sm rounded-lg px-2.5 py-1.5 focus:outline-none font-medium shadow-sm transition ${
+                isStudentGroupLocked
+                  ? 'bg-slate-200 text-slate-700 border border-slate-300 font-bold cursor-not-allowed opacity-90'
+                  : 'bg-white text-slate-900 border border-slate-200 cursor-pointer focus:ring-2 focus:ring-indigo-400'
+              }`}
             >
               <option value="Not Selected">Group Not Selected</option>
               <option value="Both">Both Groups</option>

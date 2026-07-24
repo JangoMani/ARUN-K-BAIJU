@@ -59,10 +59,80 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     setIsLoading(true);
 
     try {
+      if (trimmedEmail === 'johnbosco9947@gmail.com') {
+        const superAdminProfile: UserProfile = {
+          email: trimmedEmail,
+          firstName: 'John',
+          lastName: 'Bosco',
+          fullName: 'JOHN BOSCO',
+          groupPreparingFor: 'Both',
+          examMonthYear: 'Super Admin',
+          registeredAt: new Date().toISOString(),
+          role: 'superadmin',
+        };
+        setSuccessMessage('Welcome back Super Admin! Signing you in...');
+        setTimeout(() => {
+          onRegisterSuccess(superAdminProfile);
+        }, 600);
+        return;
+      }
+
       if (db) {
         const reqDocId = sanitizeDocId(trimmedEmail);
+
+        // Check if user is already approved in ca_approved_admins, ca_admin_requests, or ca_registered_users
+        const approvedSnap = await getDoc(doc(db, 'ca_approved_admins', reqDocId));
+        const userSnap = await getDoc(doc(db, 'ca_registered_users', reqDocId));
+        const userData = userSnap.exists() ? (userSnap.data() as UserProfile) : null;
+        const requestSnap = await getDoc(doc(db, 'ca_admin_requests', reqDocId));
+        const reqData = requestSnap.exists() ? requestSnap.data() : null;
+
+        const isApproved =
+          approvedSnap.exists() ||
+          (reqData && reqData.status === 'approved') ||
+          (userData && (userData.role === 'admin' || userData.role === 'superadmin'));
+
+        if (isApproved) {
+          // Admin access is already granted! Log them in directly without creating a pending request
+          const adminProfile: UserProfile = userData || {
+            email: trimmedEmail,
+            firstName: trimmedName.split(' ')[0] || trimmedName,
+            lastName: trimmedName.split(' ').slice(1).join(' ') || 'Admin',
+            fullName: trimmedName.toUpperCase(),
+            groupPreparingFor: 'Both',
+            examMonthYear: 'Admin Access',
+            registeredAt: new Date().toISOString(),
+            role: 'admin',
+          };
+          adminProfile.role = 'admin';
+
+          // Ensure role is set in ca_registered_users
+          const firestorePayload = JSON.parse(JSON.stringify(adminProfile));
+          await setDoc(doc(db, 'ca_registered_users', reqDocId), firestorePayload, { merge: true });
+
+          setSuccessMessage(`Admin Access Confirmed! Welcome back, ${adminProfile.fullName}. Signing you in...`);
+          setTimeout(() => {
+            onRegisterSuccess(adminProfile);
+          }, 600);
+          return;
+        }
+
+        if (reqData && reqData.status === 'pending') {
+          setErrorMessage(
+            `An Admin access request for ${trimmedEmail} is already pending review by Super Admin (johnbosco9947@gmail.com).`
+          );
+          return;
+        }
+
+        if (reqData && reqData.status === 'rejected') {
+          setErrorMessage(
+            `Your previous request for Admin Access was declined by Super Admin. Please contact johnbosco9947@gmail.com.`
+          );
+          return;
+        }
+
+        // Submit new admin request
         const requestRef = doc(db, 'ca_admin_requests', reqDocId);
-        
         await setDoc(requestRef, {
           id: reqDocId,
           email: trimmedEmail,
@@ -91,6 +161,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [groupPreparingFor, setGroupPreparingFor] = useState<GroupCategory>('Both');
+  const [examMonth, setExamMonth] = useState('May');
+  const [examYear, setExamYear] = useState('2025');
   const [loginEmail, setLoginEmail] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
@@ -106,13 +178,35 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   // Auto-fill if user attempts Google sign-in
   const [googlePhotoURL, setGooglePhotoURL] = useState<string | undefined>(undefined);
 
+  // Reset internal form and auth state whenever modal opens (e.g. on Sign Out)
+  useEffect(() => {
+    if (isOpen) {
+      setIsOtpRequired(false);
+      setGeneratedOtp('');
+      setUserEnteredOtp('');
+      setPendingProfile(null);
+      setErrorMessage('');
+      setSuccessMessage('');
+      setIsLoading(false);
+      setLoginEmail('');
+      setFirstName('');
+      setMiddleName('');
+      setLastName('');
+      setEmail('');
+      setAdminFullName('');
+      setAdminEmailInput('');
+      setAdminReason('');
+      setMode('login');
+    }
+  }, [isOpen]);
+
   if (!isOpen && currentUserProfile) return null;
 
   const generateNewOtp = () => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setGeneratedOtp(code);
     setUserEnteredOtp('');
-    setSuccessMessage(`Security OTP re-sent to johnbosco9947@gmail.com! (OTP: ${code})`);
+    setSuccessMessage(`Security OTP code resent to johnbosco9947@gmail.com.`);
   };
 
   const triggerOtpForAdmin = (profile: UserProfile) => {
@@ -121,7 +215,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     setPendingProfile(profile);
     setIsOtpRequired(true);
     setUserEnteredOtp('');
-    setSuccessMessage(`Admin Security Verification: OTP code sent to johnbosco9947@gmail.com. Please enter the code below to complete sign in.`);
+    setSuccessMessage(`Admin Security Verification: Verification code sent to johnbosco9947@gmail.com. Please enter the code below to complete sign in.`);
   };
 
   const handleVerifyOtp = (e: React.FormEvent) => {
@@ -170,14 +264,73 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       if (userDocSnap && userDocSnap.exists()) {
         const existingData = userDocSnap.data() as UserProfile;
         if (userEmail === 'johnbosco9947@gmail.com') {
-          triggerOtpForAdmin(existingData);
+          existingData.role = 'superadmin';
+          setSuccessMessage(`Welcome back Super Admin, ${existingData.fullName}!`);
+          setTimeout(() => {
+            onRegisterSuccess(existingData);
+          }, 600);
         } else {
-          setSuccessMessage(`Welcome back, ${existingData.fullName}!`);
+          // Check if user is approved admin in ca_approved_admins or ca_admin_requests
+          if (db) {
+            const approvedSnap = await getDoc(doc(db, 'ca_approved_admins', userDocId));
+            const reqSnap = await getDoc(doc(db, 'ca_admin_requests', userDocId));
+            const reqData = reqSnap.exists() ? reqSnap.data() : null;
+            if (approvedSnap.exists() || (reqData && reqData.status === 'approved')) {
+              existingData.role = 'admin';
+            }
+          }
+
+          if (existingData.role === 'admin' || existingData.role === 'superadmin') {
+            setSuccessMessage(`Welcome back Admin, ${existingData.fullName}!`);
+          } else {
+            setSuccessMessage(`Welcome back, ${existingData.fullName}!`);
+          }
           setTimeout(() => {
             onRegisterSuccess(existingData);
           }, 600);
         }
       } else {
+        // If not in ca_registered_users, check if approved in ca_approved_admins or ca_admin_requests
+        let isApprovedAdmin = false;
+        let adminFullName = '';
+        if (db) {
+          const approvedSnap = await getDoc(doc(db, 'ca_approved_admins', userDocId));
+          const reqSnap = await getDoc(doc(db, 'ca_admin_requests', userDocId));
+          const reqData = reqSnap.exists() ? reqSnap.data() : null;
+          if (approvedSnap.exists()) {
+            isApprovedAdmin = true;
+            adminFullName = approvedSnap.data()?.fullName || '';
+          } else if (reqData && reqData.status === 'approved') {
+            isApprovedAdmin = true;
+            adminFullName = reqData.fullName || '';
+          }
+        }
+
+        if (isApprovedAdmin) {
+          const nameParts = (user.displayName || adminFullName || '').trim().split(' ');
+          const gFirst = nameParts[0] || 'Admin';
+          const gLast = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'User';
+          const adminProfile: UserProfile = {
+            email: userEmail,
+            firstName: gFirst,
+            lastName: gLast,
+            fullName: (user.displayName || adminFullName || `${gFirst} ${gLast}`).toUpperCase(),
+            groupPreparingFor: 'Both',
+            examMonthYear: 'Admin Access',
+            registeredAt: new Date().toISOString(),
+            role: 'admin',
+            ...(user.photoURL ? { photoURL: user.photoURL } : {}),
+          };
+          if (db) {
+            await setDoc(doc(db, 'ca_registered_users', userDocId), JSON.parse(JSON.stringify(adminProfile)), { merge: true });
+          }
+          setSuccessMessage(`Welcome back Admin, ${adminProfile.fullName}!`);
+          setTimeout(() => {
+            onRegisterSuccess(adminProfile);
+          }, 600);
+          return;
+        }
+
         // Pre-fill form from Google account info for new registration
         const nameParts = (user.displayName || '').trim().split(' ');
         const gFirst = nameParts[0] || '';
@@ -248,7 +401,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       lastName: trimmedLast,
       fullName: fullName.toUpperCase(),
       groupPreparingFor: groupPreparingFor,
+      examMonthYear: `${examMonth} ${examYear}`,
       registeredAt: new Date().toISOString(),
+      role: 'student',
+      isRegisteredAsStudent: true,
       ...(googlePhotoURL ? { photoURL: googlePhotoURL } : {}),
     };
 
@@ -276,7 +432,11 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       }
 
       if (trimmedEmail === 'johnbosco9947@gmail.com') {
-        triggerOtpForAdmin(newUserProfile);
+        newUserProfile.role = 'superadmin';
+        setSuccessMessage(`Super Admin registration successful! Welcome ${fullName.toUpperCase()}.`);
+        setTimeout(() => {
+          onRegisterSuccess(newUserProfile);
+        }, 600);
       } else {
         setSuccessMessage(`Registration successful! Welcome ${fullName.toUpperCase()}.`);
         setTimeout(() => {
@@ -286,11 +446,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     } catch (err: any) {
       console.error('Registration save error:', err);
       // Even if firestore fails, allow local registration
-      if (trimmedEmail === 'johnbosco9947@gmail.com') {
-        triggerOtpForAdmin(newUserProfile);
-      } else {
-        onRegisterSuccess(newUserProfile);
-      }
+      onRegisterSuccess(newUserProfile);
     } finally {
       setIsLoading(false);
     }
@@ -308,6 +464,11 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       return;
     }
 
+    if (trimmedLoginEmail === 'johnbosco9947@gmail.com') {
+      setErrorMessage('Super Admin access (johnbosco9947@gmail.com) requires Google Authentication for security. Please click "Sign in with Google" above.');
+      return;
+    }
+
     setIsLoading(true);
     const userDocId = sanitizeDocId(trimmedLoginEmail);
 
@@ -320,6 +481,31 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         const docSnap = await getDoc(userRef);
         if (docSnap.exists()) {
           foundProfile = docSnap.data() as UserProfile;
+        }
+
+        // Also check if approved admin in ca_approved_admins or ca_admin_requests
+        const approvedSnap = await getDoc(doc(db, 'ca_approved_admins', userDocId));
+        const reqSnap = await getDoc(doc(db, 'ca_admin_requests', userDocId));
+        const reqData = reqSnap.exists() ? reqSnap.data() : null;
+
+        if (approvedSnap.exists() || (reqData && reqData.status === 'approved')) {
+          const approvedData = approvedSnap.exists() ? approvedSnap.data() : reqData;
+          const aFullName = approvedData?.fullName || 'ADMIN';
+          if (!foundProfile) {
+            foundProfile = {
+              email: trimmedLoginEmail,
+              firstName: aFullName.split(' ')[0] || 'Admin',
+              lastName: aFullName.split(' ').slice(1).join(' ') || 'User',
+              fullName: aFullName.toUpperCase(),
+              groupPreparingFor: 'Both',
+              examMonthYear: 'Admin Access',
+              registeredAt: new Date().toISOString(),
+              role: 'admin',
+            };
+            await setDoc(doc(db, 'ca_registered_users', userDocId), JSON.parse(JSON.stringify(foundProfile)), { merge: true });
+          } else {
+            foundProfile.role = 'admin';
+          }
         }
       }
 
@@ -336,16 +522,16 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       }
 
       if (foundProfile) {
-        if (trimmedLoginEmail === 'johnbosco9947@gmail.com') {
-          triggerOtpForAdmin(foundProfile);
+        if (foundProfile.role === 'admin' || foundProfile.role === 'superadmin') {
+          setSuccessMessage(`Welcome back Admin, ${foundProfile.fullName}!`);
         } else {
           setSuccessMessage(`Welcome back, ${foundProfile.fullName}!`);
-          setTimeout(() => {
-            onRegisterSuccess(foundProfile!);
-          }, 600);
         }
+        setTimeout(() => {
+          onRegisterSuccess(foundProfile!);
+        }, 600);
       } else {
-        setErrorMessage('No registered user found with this Email ID. Please register first.');
+        setErrorMessage('No registered user or approved admin found with this Email ID. Please register first.');
       }
     } catch (err: any) {
       setErrorMessage('Failed to sign in. Please check your internet connection or register again.');
@@ -456,20 +642,18 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   To access the Admin Console and Student Portal for <span className="font-extrabold underline text-amber-950">johnbosco9947@gmail.com</span>, enter the 6-digit OTP code below.
                 </p>
 
-                {/* Simulated / Sent OTP badge */}
+                {/* Sent OTP status badge */}
                 <div className="mt-2 p-3 bg-white border border-amber-300/80 rounded-xl flex items-center justify-between shadow-inner">
-                  <div>
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block">
-                      Security Code Sent To Mail
-                    </span>
-                    <span className="text-lg font-black tracking-widest text-indigo-900 font-mono">
-                      {generatedOtp}
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-amber-600" />
+                    <span className="text-xs font-semibold text-slate-700">
+                      Security code sent to mailbox
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={generateNewOtp}
-                    className="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer"
+                    className="px-2.5 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0"
                   >
                     <RefreshCw className="w-3 h-3" /> Resend
                   </button>
@@ -606,6 +790,39 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   >
                     2nd Group
                   </button>
+                </div>
+              </div>
+
+              {/* Target Examination Month & Year */}
+              <div className="space-y-1.5 pt-1">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <KeyRound className="w-3.5 h-3.5 text-indigo-600" /> Target Examination Month & Year <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={examMonth}
+                    onChange={(e) => setExamMonth(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="May">May</option>
+                    <option value="September">September</option>
+                    <option value="November">November</option>
+                    <option value="January">January</option>
+                  </select>
+
+                  <select
+                    value={examYear}
+                    onChange={(e) => setExamYear(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="2024">2024</option>
+                    <option value="2025">2025</option>
+                    <option value="2026">2026</option>
+                    <option value="2027">2027</option>
+                    <option value="2028">2028</option>
+                    <option value="2029">2029</option>
+                    <option value="2030">2030</option>
+                  </select>
                 </div>
               </div>
 
